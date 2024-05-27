@@ -4,9 +4,48 @@
         <title></title>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <!-- <link href="css/style.css" rel="stylesheet"> -->
+<style>
+    #bg{
+        background: url('https://w0.peakpx.com/wallpaper/447/912/HD-wallpaper-blue-circuit-board-texture-circuit-board-computer-board-technology-blue-background-blue-circuit-board-pattern-texture.jpg');
+        width:300px; height:300px;
+        position:fixed;
+        top:0; left:0;
+        background-size: cover;
+        background-position: center;
+       
+      }
+
+</style>
     </head>
     <body>
-    Hello World
+        <div id='bg'></div>
+        <h1>m@rco.cr</h1>    
+        <script>
+            let lastTime = 0;
+            const fps = 30;
+            const interval = 1000 / fps;
+            const st1=document.getElementById('bg').style;
+            
+            function trackPosition(timestamp) {
+              if (timestamp - lastTime >= interval) {
+                lastTime = timestamp;
+            
+                // Get the current scroll position
+                const scrollX = window.screenX;;
+                const scrollY = window.screenY;
+                st1.width=`${screen.width}px`;
+                st1.height=`${screen.height}px`;
+                st1.transform=`translate3d(${-scrollX}px,${-scrollY}px,0)`;
+            
+                document.getElementById('debug').innerHTML=(`Scroll Position - X: ${scrollX}, Y: ${scrollY}, ${st1.width}`);
+              }
+            
+              requestAnimationFrame(trackPosition);
+            }
+            
+            requestAnimationFrame(trackPosition);
+            
+
+        </script>
     </body>
 </html>

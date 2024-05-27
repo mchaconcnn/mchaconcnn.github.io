@@ -36,8 +36,6 @@
                 st1.width=`${screen.width}px`;
                 st1.height=`${screen.height}px`;
                 st1.transform=`translate3d(${-scrollX}px,${-scrollY}px,0)`;
-            
-                document.getElementById('debug').innerHTML=(`Scroll Position - X: ${scrollX}, Y: ${scrollY}, ${st1.width}`);
               }
             
               requestAnimationFrame(trackPosition);

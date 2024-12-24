@@ -5,7 +5,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-    #bg{
+/*     #bg{
         background: url('bg.webp');
         width:300px; height:300px;
         position:fixed;
@@ -13,7 +13,7 @@
         background-size: cover;
         background-position: center;
        
-      }
+      } */
 
 </style>
     </head>
@@ -34,27 +34,27 @@
 <p>- End of the world: All the songs are about human existance being ephimeral, abstract and fuzzy..... so.... is it the end of the world even if it ever existed? This is not really a song.... just a rage closing.</p>
         </p>
         <script>
-            let lastTime = 0;
-            const fps = 30;
-            const interval = 1000 / fps;
-            const st1=document.getElementById('bg').style;
+            // let lastTime = 0;
+            // const fps = 30;
+            // const interval = 1000 / fps;
+            // const st1=document.getElementById('bg').style;
             
-            function trackPosition(timestamp) {
-              if (timestamp - lastTime >= interval) {
-                lastTime = timestamp;
+            // function trackPosition(timestamp) {
+            //   if (timestamp - lastTime >= interval) {
+            //     lastTime = timestamp;
             
-                // Get the current scroll position
-                const scrollX = window.screenX;;
-                const scrollY = window.screenY;
-                st1.width=`${screen.width}px`;
-                st1.height=`${screen.height}px`;
-                st1.transform=`translate3d(${-scrollX}px,${-scrollY}px,0)`;
-              }
+            //     // Get the current scroll position
+            //     const scrollX = window.screenX;;
+            //     const scrollY = window.screenY;
+            //     st1.width=`${screen.width}px`;
+            //     st1.height=`${screen.height}px`;
+            //     st1.transform=`translate3d(${-scrollX}px,${-scrollY}px,0)`;
+            //   }
             
-              requestAnimationFrame(trackPosition);
-            }
+            //   requestAnimationFrame(trackPosition);
+            // }
             
-            requestAnimationFrame(trackPosition);
+            // requestAnimationFrame(trackPosition);
             
 
         </script>

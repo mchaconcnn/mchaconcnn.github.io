@@ -4,12 +4,13 @@
   <meta charset="UTF-8" />
   <title>VR Esferas Navegables</title>
   <style>body { margin: 0; }</style>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/XRControllerModelFactory.js"></script>
 </head>
 <body>
-<script>
+<script type="module">
+  import * as THREE from './js/three.module.min.js';
+  import { VRButton } from './js/jsm/webxr/VRButton.js';
+  import { XRControllerModelFactory } from './js/jsm/webxr/XRControllerModelFactory.js';
+
   let scene, camera, renderer, currentSphere = 0;
 
   const textureSets = {

@@ -15,11 +15,13 @@
 
   const textureSets = {
     default: ['0000.jpg', 'esfera2.jpg', 'esfera3.jpg'],
-    noche: ['0000_noche.jpg', 'esfera2_noche.jpg', 'esfera3_noche.jpg'],
-    luz: ['0000_luz.jpg', 'esfera2_luz.jpg', 'esfera3_luz.jpg']
+    noche: ['esfera1_noche.jpg', 'esfera2_noche.jpg', 'esfera3_noche.jpg'],
+    luz: ['esfera1_luz.jpg', 'esfera2_luz.jpg', 'esfera3_luz.jpg']
   };
 
   let currentMode = 'default';
+  const buttonTextures = {};
+  const buttons = [];
 
   init();
   loadSphere(currentSphere);
@@ -35,6 +37,7 @@
     document.body.appendChild(VRButton.createButton(renderer));
 
     setupControllers();
+    loadButtons();
 
     renderer.setAnimationLoop(() => {
       renderer.render(scene, camera);
@@ -51,7 +54,7 @@
     const geometry = new THREE.SphereGeometry(500, 64, 64);
     geometry.scale(-1, 1, 1);
 
-    const texture = new THREE.TextureLoader().load(textureSets[currentMode][index]);
+    const texture = new THREE.TextureLoader().load(`spheres/${textureSets[currentMode][index]}`);
 
     const material = new THREE.ShaderMaterial({
       uniforms: {
@@ -64,8 +67,8 @@
           vUV = uv;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
-      `,
-      fragmentShader: `
+      \`,
+      fragmentShader: \`
         uniform sampler2D map;
         uniform vec2 resolution;
         varying vec2 vUV;
@@ -103,17 +106,11 @@
 
   function setupControllers() {
     const controller = renderer.xr.getController(0);
-    controller.addEventListener('selectstart', () => {
-      currentSphere = (currentSphere + 1) % textureSets[currentMode].length;
-      loadSphere(currentSphere);
-    });
+    controller.addEventListener('selectstart', onSelect);
     scene.add(controller);
 
     const controller2 = renderer.xr.getController(1);
-    controller2.addEventListener('selectstart', () => {
-      currentMode = currentMode === 'default' ? 'noche' : currentMode === 'noche' ? 'luz' : 'default';
-      loadSphere(currentSphere);
-    });
+    controller2.addEventListener('selectstart', onSelect);
     scene.add(controller2);
 
     const controllerModelFactory = new XRControllerModelFactory();
@@ -124,6 +121,40 @@
     const grip2 = renderer.xr.getControllerGrip(1);
     grip2.add(controllerModelFactory.createControllerModel(grip2));
     scene.add(grip2);
+  }
+
+  function loadButtons() {
+    const loader = new THREE.TextureLoader();
+    const btnData = [
+      { name: 'siguiente', action: () => { currentSphere = (currentSphere + 1) % textureSets[currentMode].length; loadSphere(currentSphere); }, x: -1.5 },
+      { name: 'noche', action: () => { currentMode = 'noche'; loadSphere(currentSphere); }, x: -0.5 },
+      { name: 'dia', action: () => { currentMode = 'default'; loadSphere(currentSphere); }, x: 0.5 },
+      { name: 'luces', action: () => { currentMode = 'luz'; loadSphere(currentSphere); }, x: 1.5 }
+    ];
+
+    btnData.forEach(({ name, action, x }) => {
+      const texture = loader.load(`btn_${name}.png`);
+      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+      const geo = new THREE.PlaneGeometry(0.5, 0.5);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, 1.5, -2);
+      mesh.userData.action = action;
+      scene.add(mesh);
+      buttons.push(mesh);
+    });
+  }
+
+  function onSelect(event) {
+    const tempMatrix = new THREE.Matrix4();
+    tempMatrix.identity().extractRotation(event.target.matrixWorld);
+    const raycaster = new THREE.Raycaster();
+    raycaster.ray.origin.setFromMatrixPosition(event.target.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+    const intersects = raycaster.intersectObjects(buttons);
+    if (intersects.length > 0) {
+      const btn = intersects[0].object;
+      if (btn.userData.action) btn.userData.action();
+    }
   }
 </script>
 </body>

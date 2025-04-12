@@ -1,11 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8" />
+  <title>VR Esferas Navegables</title>
+  <style>body { margin: 0; }</style>
 </head>
 <body>
-    Hello World
+<script type="module">
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js';
+  import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
+  import { XRControllerModelFactory } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/XRControllerModelFactory.js';
+
+  let scene, camera, renderer, currentSphere = 0;
+
+  const textureSets = {
+    default: ['0000.jpg', 'esfera2.jpg', 'esfera3.jpg'],
+    noche: ['0000_noche.jpg', 'esfera2_noche.jpg', 'esfera3_noche.jpg'],
+    luz: ['0000_luz.jpg', 'esfera2_luz.jpg', 'esfera3_luz.jpg']
+  };
+
+  let currentMode = 'default';
+
+  init();
+  loadSphere(currentSphere);
+
+  function init() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+    document.body.appendChild(VRButton.createButton(renderer));
+
+    setupControllers();
+
+    renderer.setAnimationLoop(() => {
+      renderer.render(scene, camera);
+    });
+
+    window.addEventListener('keydown', onKeyDown);
+  }
+
+  let sphere;
+
+  function loadSphere(index) {
+    if (sphere) scene.remove(sphere);
+
+    const geometry = new THREE.SphereGeometry(500, 64, 64);
+    geometry.scale(-1, 1, 1);
+
+    const texture = new THREE.TextureLoader().load(textureSets[currentMode][index]);
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        map: { value: texture },
+        resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+      },
+      vertexShader: `
+        varying vec2 vUV;
+        void main() {
+          vUV = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D map;
+        uniform vec2 resolution;
+        varying vec2 vUV;
+        void main() {
+          vec2 uv = vUV;
+          bool isRightEye = (gl_FragCoord.x / resolution.x) > 0.5;
+          uv.y = isRightEye ? 0.5 + uv.y * 0.5 : uv.y * 0.5;
+          gl_FragColor = texture2D(map, uv);
+        }
+      `
+    });
+
+    sphere = new THREE.Mesh(geometry, material);
+    scene.add(sphere);
+  }
+
+  function onKeyDown(event) {
+    if (event.key === 'ArrowRight') {
+      currentSphere = (currentSphere + 1) % textureSets[currentMode].length;
+      loadSphere(currentSphere);
+    } else if (event.key === 'ArrowLeft') {
+      currentSphere = (currentSphere - 1 + textureSets[currentMode].length) % textureSets[currentMode].length;
+      loadSphere(currentSphere);
+    } else if (event.key === '1') {
+      currentMode = 'default';
+      loadSphere(currentSphere);
+    } else if (event.key === '2') {
+      currentMode = 'noche';
+      loadSphere(currentSphere);
+    } else if (event.key === '3') {
+      currentMode = 'luz';
+      loadSphere(currentSphere);
+    }
+  }
+
+  function setupControllers() {
+    const controller = renderer.xr.getController(0);
+    controller.addEventListener('selectstart', () => {
+      currentSphere = (currentSphere + 1) % textureSets[currentMode].length;
+      loadSphere(currentSphere);
+    });
+    scene.add(controller);
+
+    const controller2 = renderer.xr.getController(1);
+    controller2.addEventListener('selectstart', () => {
+      currentMode = currentMode === 'default' ? 'noche' : currentMode === 'noche' ? 'luz' : 'default';
+      loadSphere(currentSphere);
+    });
+    scene.add(controller2);
+
+    const controllerModelFactory = new XRControllerModelFactory();
+    const grip1 = renderer.xr.getControllerGrip(0);
+    grip1.add(controllerModelFactory.createControllerModel(grip1));
+    scene.add(grip1);
+
+    const grip2 = renderer.xr.getControllerGrip(1);
+    grip2.add(controllerModelFactory.createControllerModel(grip2));
+    scene.add(grip2);
+  }
+</script>
 </body>
 </html>

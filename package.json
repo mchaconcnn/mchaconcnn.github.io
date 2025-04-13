@@ -1,0 +1,31 @@
+{
+  "name": "mchaconcnn.github.io",
+  "version": "1.0.0",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "bundle": "node bundle.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mchaconcnn/mchaconcnn.github.io.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mchaconcnn/mchaconcnn.github.io/issues"
+  },
+  "homepage": "https://github.com/mchaconcnn/mchaconcnn.github.io#readme",
+  "description": "",
+  "devDependencies": {
+    "browser-sync": "^3.0.4",
+    "esbuild": "^0.18.0"
+  },
+  "dependencies": {
+    "three": "^0.175.0"
+  }
+}

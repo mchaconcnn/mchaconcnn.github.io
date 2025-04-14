@@ -1,34 +1,39 @@
 const browserSync = require('browser-sync').create();
-const esbuild = require('esbuild');
+const build = require('./bundle');
 const chokidar = require('chokidar'); // Add chokidar for file watching
+const fs = require('fs');
 
-// Function to bundle the JavaScript files
-function bundleJS() {
-  esbuild.build({
-    entryPoints: ['./js/main.js'],
-    bundle: true,
-    outfile: './docs/js/main.js',
-    minify: true,
-    sourcemap: true
-  }).then(() => {
-    console.log('Bundling complete!');
-  }).catch(() => {
-    console.error('Bundling failed.');
-  });
+
+let httpsOptions; // Define httpsOptions outside the try block
+
+try {
+
+    const key=fs.readFileSync('./ssl/key.pem');
+    const cert=fs.readFileSync('./ssl/cert.pem');
+    httpsOptions = {
+        key: './ssl/key.pem',
+        cert: './ssl/cert.pem'
+    };
+
+} catch (error) {
+    console.error('Error loading SSL files:', error);
+    process.exit(1); // Exit the process if SSL files cannot be loaded
 }
 
-// Initial bundling
-bundleJS();
+const watcher = chokidar.watch('./js/**/*.js');
 
-// Watch for changes in the ./js directory
-chokidar.watch('./js/**/*.js').on('change', (path) => {
-  console.log(`File changed: ${path}`);
-  bundleJS();
-});
+watcher
+  .on('change', (path) => {
+    build.build(path); // Call the build function with the changed file
+  })
+  .on('add', (path) => {
+    watcher.emit('change', path); // Trigger the change event manually
+  });
 
-// Start the server
+// Start the server with HTTPS
 browserSync.init({
     server: './docs',
     port: 8080,
+    https: httpsOptions, // Use self-signed certificates
     files: ['./docs/**/*'] // Monitor changes in the ./docs directory
 });

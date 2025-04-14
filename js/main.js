@@ -1,6 +1,7 @@
 // Import necessary modules for WebXR and Three.js
 import * as THREE from 'three';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 
 // Initialize the scene, camera, and renderer
 const scene = new THREE.Scene();
@@ -8,76 +9,67 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
+renderer.xr.setFramebufferScaleFactor(2.0); // Optimize for Quest 3 by increasing framebuffer scale for better resolution
+renderer.toneMapping = THREE.ACESFilmicToneMapping; // Use ACES Filmic tone mapping for better color grading
+renderer.outputEncoding = THREE.SRGBColorSpace; // Ensure proper color encoding for Quest 3 display
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
 // Add an equirectangular environment texture
-const textureLoader = new THREE.TextureLoader();
+const exrLoader = new EXRLoader();
 
-// Load two separate images for left and right views
-const leftTexture = textureLoader.load('vr/standard/left.jpg', (texture) => {
-    console.log('Left texture loaded successfully:', texture);
-});
-const rightTexture = textureLoader.load('vr/standard/right.jpg', (texture) => {
-    console.log('Right texture loaded successfully:', texture);
+const leftTexture = exrLoader.load('vr/day/TBEXR/0000_L.exr', (texture) => {
+    console.log('Left EXR texture loaded successfully:', texture);
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    renderer.xr.setFramebufferScaleFactor(1.0); // Ensure proper scaling for XR rendering
 });
 
-// Adjust UV mapping for left-right stereoscopic images
-Promise.all([leftTexture, rightTexture]).then(([left, right]) => {
-    console.log('Left texture:', left);
-    console.log('Right texture:', right);
-
-    const stereoMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-            leftMap: { value: left },
-            rightMap: { value: right },
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform sampler2D leftMap;
-            uniform sampler2D rightMap;
-            varying vec2 vUv;
-            void main() {
-                vec2 uv = vUv;
-                if (uv.x > 0.5) {
-                    uv.x = (uv.x - 0.5) * 2.0; // Right half
-                    gl_FragColor = texture2D(rightMap, uv);
-                } else {
-                    uv.x = uv.x * 2.0; // Left half
-                    gl_FragColor = texture2D(leftMap, uv);
-                }
-            }
-        `,
-    });
-
-    console.log('Stereo material created:', stereoMaterial);
-
-    const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(500, 60, 40),
-        stereoMaterial
-    );
-    sphere.scale.x = -1; // Invert the sphere to view from inside
-    scene.add(sphere);
-
-    console.log('Sphere added to scene:', sphere);
-}).catch((error) => {
-    console.error('Error loading textures:', error);
+const rightTexture = exrLoader.load('vr/day/TBEXR/0000_R.exr', (texture) => {
+    console.log('Right EXR texture loaded successfully:', texture);
+    texture.mapping = THREE.EquirectangularReflectionMapping;
 });
+
+const leftSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(500, 60, 40),
+    new THREE.MeshBasicMaterial({ map: leftTexture })
+);
+leftSphere.scale.x = -1; // Invert the sphere to view from inside
+scene.add(leftSphere);
+
+const rightSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(500, 60, 40),
+    new THREE.MeshBasicMaterial({ map: rightTexture })
+);
+rightSphere.scale.x = -1; // Invert the sphere to view from inside
+scene.add(rightSphere);
+
+// Assign custom layers so we can render each sphere to a specific eye
+leftSphere.layers.set(1);   // Layer 1 -> left eye
+rightSphere.layers.set(2);  // Layer 2 -> right eye
 
 // Position the camera
 camera.position.set(0, 1.6, 3);
+camera.layers.enable(1);
 
 // Animation loop
-function animate() {
-    renderer.setAnimationLoop(() => {
-        renderer.render(scene, camera);
-    });
-}
+renderer.setAnimationLoop(() => {
+    const session = renderer.xr.getSession();
+    if (session) {
+        const pose = session.inputSources[0]?.targetRaySpace;
+        if (pose) {
+            leftSphere.visible = true;
+            rightSphere.visible = true;
+        }
+    }
+    
+    // Ensure each eye camera only sees its corresponding layer
+    const xrCamera = renderer.xr.getCamera(camera);
+    if (xrCamera && xrCamera.cameras && xrCamera.cameras.length === 2) {
+        const [leftCam, rightCam] = xrCamera.cameras;
+        // Force each eye camera to render ONLY its assigned layer
+        leftCam.layers.set(1);   // left eye -> layer 1
+        rightCam.layers.set(2);  // right eye -> layer 2
+    }
 
-animate();
+    renderer.render(scene, camera);
+});

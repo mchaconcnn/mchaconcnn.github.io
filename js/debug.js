@@ -4,7 +4,7 @@ import { EXRLoader } from '../three/examples/jsm/loaders/EXRLoader.js'; // Updat
 import { OrbitControls } from '../three/examples/jsm/controls/OrbitControls.js'; // Import OrbitControls
 
 // ----- CONFIG -----
-const sphereRadius = 1.5;   // Full‑size sphere so camera starts at its exact center
+const sphereRadius = 3;   // Full‑size sphere so camera starts at its exact center
 // const parallaxFactor = 3.0; // Stronger inverse motion (1 = match head movement)
 // -------------------
 
@@ -27,9 +27,9 @@ camera.layers.enable( 0 ); // enabled by default
 const renderer = new THREE.WebGLRenderer({ antialias: true }); // Enable antialiasing for better visual quality
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio); // Optimize for high-resolution displays
-renderer.outputEncoding = THREE.LinearSRGBColorSpace; // Improve color accuracy
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1;
+renderer.outputEncoding = THREE.SRGBColorSpace; // Improve color accuracy
+// renderer.toneMapping = THREE.ACESFilmicToneMapping; // Use a more accurate tone mapping
+// renderer.toneMappingExposure = 1;
 window.renderer=renderer;
 
 document.body.appendChild(renderer.domElement);
@@ -52,7 +52,7 @@ const exrLoader = new EXRLoader();
 const textureLoader = new THREE.TextureLoader();
 
 // exrLoader.load('vr/day/TBEXR/0001_L.exr', (texture) => {
-textureLoader.load('vr/day/TBEXR/0001_L.jpg', (texture) => {
+textureLoader.load('vr/day/A/0001_L.jpg', (texture) => {
         texture.mapping = THREE.EquirectangularReflectionMapping;
     // texture.colorSpace = THREE.LinearSRGBColorSpace; // keep linear EXR data
     texture.colorSpace = THREE.SRGBColorSpace; // keep linear EXR data
@@ -70,7 +70,7 @@ textureLoader.load('vr/day/TBEXR/0001_L.jpg', (texture) => {
 });
 
 // Load the right‑eye panorama on layer 2
-textureLoader.load('vr/day/TBEXR/0001_R.jpg', (texture) => {
+textureLoader.load('vr/day/A/0001_R.jpg', (texture) => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;

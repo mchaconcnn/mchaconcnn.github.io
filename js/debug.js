@@ -1,12 +1,21 @@
 import * as THREE from '../three/build/three.module.js'; // Update import to use the local file
 import { VRButton } from '../three/examples/jsm/webxr/VRButton.js'; // Update VRButton import to use the local file
-import { EXRLoader } from '../three/examples/jsm/loaders/EXRLoader.js'; // Update EXRLoader import to use the local file
+// import { EXRLoader } from '../three/examples/jsm/loaders/EXRLoader.js'; // Update EXRLoader import to use the local file
 import { OrbitControls } from '../three/examples/jsm/controls/OrbitControls.js'; // Import OrbitControls
+import { XRControllerModelFactory } from '../three/examples/jsm/webxr/XRControllerModelFactory.js';
+import { XRHandModelFactory } from '../three/examples/jsm/webxr/XRHandModelFactory.js'; // Update to use XRHandModelFactory
+const vrMap = require('./vr.json').map;
 
 // ----- CONFIG -----
-const sphereRadius = 3;   // Full‑size sphere so camera starts at its exact center
+const sphereRadius = 20;   // Full‑size sphere so camera starts at its exact center
+
+let gamePads=null;
+
 // const parallaxFactor = 3.0; // Stronger inverse motion (1 = match head movement)
 // -------------------
+
+let pointer=[];
+window.pointer=function(){return pointer;}
 
 // Create a scene
 const scene = new THREE.Scene();
@@ -16,6 +25,7 @@ let baseOffset = null; // offset to recenter spheres so camera starts at sphere 
 let xcamInit=false;
 window.xc=function(){return xcamInit;}
 
+const mapObject = new THREE.Group();
 
 // Create a camera
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000); // Increase far clipping plane
@@ -47,48 +57,34 @@ camera.lookAt(new THREE.Vector3(0, 0, -1));
 controls.target.set(1, 0, 0);
 controls.update();
 
-// Load an equirectangular EXR panorama and display it inside a large sphere
-const exrLoader = new EXRLoader();
 const textureLoader = new THREE.TextureLoader();
 
-// exrLoader.load('vr/day/TBEXR/0001_L.exr', (texture) => {
-textureLoader.load('vr/day/A/0001_L.jpg', (texture) => {
-        texture.mapping = THREE.EquirectangularReflectionMapping;
-    // texture.colorSpace = THREE.LinearSRGBColorSpace; // keep linear EXR data
-    texture.colorSpace = THREE.SRGBColorSpace; // keep linear EXR data
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.repeat.x = -1;
-    const sphereGeo = new THREE.SphereGeometry(sphereRadius, 60, 40);
-    const sphereMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
-    panoramaLeft = new THREE.Mesh(sphereGeo, sphereMat);
-    // Make it visible in both the default layer 0 (for non‑XR preview)
-    // and layer 1 (for the left eye once XR starts)
+    const sphereGeoL = new THREE.SphereGeometry(sphereRadius, 60, 40);
+    const sphereMatL = new THREE.MeshBasicMaterial({ side: THREE.BackSide });
+    panoramaLeft = new THREE.Mesh(sphereGeoL, sphereMatL);
     panoramaLeft.layers.set(1);      // left‑eye layer
     panoramaLeft.layers.enable(0);   // also show on default layer
     scene.add(panoramaLeft);
-    window.panoramaLeft=panoramaLeft;
-});
 
-// Load the right‑eye panorama on layer 2
-textureLoader.load('vr/day/A/0001_R.jpg', (texture) => {
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.repeat.x = -1;
-    const sphereGeo = new THREE.SphereGeometry(sphereRadius, 60, 40);
-    const sphereMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
-    panoramaRight = new THREE.Mesh(sphereGeo, sphereMat);
+    const sphereGeoR = new THREE.SphereGeometry(sphereRadius, 60, 40);
+    const sphereMatR = new THREE.MeshBasicMaterial({ side: THREE.BackSide });
+    panoramaRight = new THREE.Mesh(sphereGeoR, sphereMatR);
     panoramaRight.layers.set(2); // visible only in layer 2 (right eye)
-    scene.add(panoramaRight);
-});
+    scene.add(panoramaRight);    
 
-// Add lighting for better visuals
-// const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-// scene.add(light);
+// Add lighting to illuminate the scene and controllers
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Soft white light
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+directionalLight.position.set(0, 10, 10).normalize();
+scene.add(directionalLight);
 
 // Add WebXR support
 renderer.xr.enabled = true;
-document.body.appendChild(VRButton.createButton(renderer));
+document.body.appendChild(VRButton.createButton(renderer,{
+    requiredFeatures: [ 'hand-tracking' ]
+}));
 
 // Configure per‑eye layers: layer 1 → left eye, layer 2 → right eye
 renderer.xr.addEventListener('sessionstart', () => {
@@ -114,6 +110,26 @@ renderer.xr.addEventListener('sessionstart', () => {
         controls.enabled = false; // disable OrbitControls in VR
         }
     
+});
+
+// Ensure hand tracking is enabled in the XR session
+renderer.xr.addEventListener('sessionstart', (event) => {
+    const session = event.target.getSession();
+    if (session) {
+        session.updateRenderState({ baseLayer: new XRWebGLLayer(session, renderer.getContext()) });
+        session.requestReferenceSpace('local').then((refSpace) => {
+            renderer.xr.setReferenceSpace(refSpace);
+        });
+
+        // Check for hand-tracking support
+        if (session.inputSources) {
+            session.inputSources.forEach((inputSource) => {
+                if (inputSource.hand) {
+                    console.log('Hand tracking is supported and enabled.');
+                }
+            });
+        }
+    }
 });
 
 renderer.xr.addEventListener('sessionend', () => {
@@ -146,40 +162,302 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Add XR controllers
+const controller1 = renderer.xr.getController(0);
+const controller2 = renderer.xr.getController(1);
+scene.add(controller1);
+scene.add(controller2);
+
+const controllerModelFactory = new XRControllerModelFactory();
+
+// Add controller models
+const controllerGrip1 = renderer.xr.getControllerGrip(0);
+controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+scene.add(controllerGrip1);
+
+const controllerGrip2 = renderer.xr.getControllerGrip(1);
+controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+scene.add(controllerGrip2);
+
+// Add hand tracking support
+const handModelFactory = new XRHandModelFactory();
+
+const hand1 = renderer.xr.getHand(0);
+hand1.add(handModelFactory.createHandModel(hand1,'mesh'));
+scene.add(hand1);
+
+const hand2 = renderer.xr.getHand(1);
+hand2.add(handModelFactory.createHandModel(hand2,'mesh'));
+scene.add(hand2);
+
+
+
+const geometry = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, 1 ) ] );
+
+const line = new THREE.Line( geometry );
+line.name = 'line';
+line.scale.z = 5;
+
+scene.add( line );
+// controller2.add( line.clone() );
+
+
+
+
+// Update the line to point in the direction of the index finger's last phalange
+function updateLineDirection(hand) {
+    if (hand && hand.joints) {
+        // const indexTip = hand.joints['index-finger-tip'];
+        
+        
+        // const indexBase = hand.joints['index-finger-metacarpal'];
+        const indexBase = hand.joints['index-finger-phalanx-proximal'];
+        // const indexBase = hand.joints['index-finger-phalanx-intermediate'];
+    //    const indexBase = hand.joints['index-finger-phalanx-distal'];
+    
+    
+        const indexTip = hand.joints['index-finger-phalanx-intermediate'];
+        // const indexTip = hand.joints['index-finger-tip'];
+
+        if (indexTip && indexBase) {
+            const tipPosition = new THREE.Vector3();
+            const basePosition = new THREE.Vector3();
+            indexTip.getWorldPosition(tipPosition);
+            indexBase.getWorldPosition(basePosition);
+            const direction = new THREE.Vector3().subVectors(tipPosition, basePosition).normalize();
+            if (line) {
+                line.position.copy(indexTip.getWorldPosition(tipPosition));
+                line.lookAt(tipPosition.add(direction));
+            }
+        }
+    }
+}
+
+// Detect what the line is touching
+function detectLineIntersection(hand) {
+    if (hand) {
+        if (line) {
+            const raycaster = new THREE.Raycaster();
+            const lineDirection = new THREE.Vector3();
+            line.getWorldDirection(lineDirection);
+
+            const linePosition = new THREE.Vector3();
+            line.getWorldPosition(linePosition);
+
+            raycaster.set(linePosition, lineDirection);
+
+            // Check for intersections with objects in the scene
+            const intersects = raycaster.intersectObjects(scene.children, true);
+
+            if (intersects.length > 0) {
+                const firstIntersection = intersects[0];
+                const object = firstIntersection.object;
+
+                    // const intersectionPoint = firstIntersection.point;
+                    // console.log('Intersected a sphere at:', intersectionPoint.x);
+                    // Use intersectionPoint to look up a value in a depth map
+                    const uv = firstIntersection.uv;
+                    if (uv && object.material.map) {
+                        const texture = object.material.map;
+                        const x = Math.floor(uv.x * 1000);
+                        const y = Math.floor(uv.y * 1000);
+                        pointer=[x,y];
+                        // console.log(`Intersected sphere texture at pixel coordinates: (${x}, ${y})`);
+                    }
+
+            }
+        }
+    }
+}
+
+let aPressed=false;
+
+function detectPress() {
+    if(!gamePads)return;
+    if(!gamePads.buttons)return;
+    if(!gamePads.buttons.length<4)return;
+
+        if((gamePads.buttons[4].pressed==false)&&(aPressed!=false)){
+            if(lastCircle){
+                goSphere(lastCircle.userData.key);
+            }
+        }
+        aPressed=gamePads.buttons[4].pressed;
+        
+    // });  
+}
+
 // Animation loop
 function animate() {
     renderer.setAnimationLoop(() => {
+        const hand = renderer.xr.getHand(0); // Assuming the line is attached to the first hand
+        updateLineDirection(hand);
+        detectLineIntersection(hand);
+        detectPress();
+
         // Obtain headset position (works on Quest & emulator)
         const headPos = getHeadWorldPosition();
-
         if(xcamInit===0){
             xcamInit=true;
             panoramaLeft.position.copy(headPos);
             panoramaRight.position.copy(headPos);
         }
 
-
-        // window.xcamInit=headPos;
-        // if (headPos) {
-            // if (!initialHeadPos) initialHeadPos = headPos.clone(); // capture on first valid frame
-            // const delta = headPos.clone().sub(initialHeadPos).multiplyScalar(-parallaxFactor);
-            // const finalPos = baseOffset ? baseOffset.clone().add(delta) : delta;
-            // if (panoramaLeft){
-                // panoramaLeft.position.copy(finalPos);
-            // }  
-            // if (panoramaRight){
-                // panoramaRight.position.copy(finalPos);
-            // }
-        // }
+        // Ensure panoramaLeft and panoramaRight are defined before accessing their material properties
+        if (panoramaLeft && panoramaLeft.material) {
+            panoramaLeft.material.lightMap = null;
+        }
+        if (panoramaRight && panoramaRight.material) {
+            panoramaRight.material.lightMap = null;
+        }
 
         if (!renderer.xr.isPresenting) {
             controls.update(); // only update OrbitControls when not in XR
         }
+
+        checkCameraDirection(); // Check camera direction and highlight circles
 
         renderer.render(scene, camera);
     });
 }
 
 animate();
+// 
+export function goSphere(label) {
+    const pos=vrMap[label].pos;
+    console.log('label: ',label);
+
+    mapObject.position.z=-(pos[0]);
+    mapObject.position.x=-(pos[1]);
+
+    // Update the texture of the left and right spheres dynamically
+    textureLoader.load(`vr/${label}/day/0001_L.jpg`, (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.repeat.x = -1;
+        if (panoramaLeft) {
+            panoramaLeft.material.map = texture;
+            panoramaLeft.material.needsUpdate = true;
+        }
+    });
+
+    textureLoader.load(`vr/${label}/day/0001_R.jpg`, (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.repeat.x = -1;
+        if (panoramaRight) {
+            panoramaRight.material.map = texture;
+            panoramaRight.material.needsUpdate = true;
+        }
+    });
+}
 
 
+// Attach goSphere to the global window object
+window.goSphere = goSphere;
+
+
+
+// Automatically call goSphere with the first key in the "map"
+const firstKey = Object.keys(vrMap)[0];
+goSphere(firstKey);
+
+
+// Create a map object to hold the circles
+
+mapObject.position.y=-145;
+mapObject.rotateY(Math.PI*0.5);
+scene.add(mapObject);
+window.ob=mapObject;
+
+// Iterate over the vrMap and create a flat 2cm radius circle for each position
+Object.keys(vrMap).forEach((key) => {
+    const pos = vrMap[key].pos;
+
+    // Create a flat circle geometry
+    const cylinderGeometry = new THREE.CircleGeometry(20); // 2cm radius
+    const circleMaterial = new THREE.MeshBasicMaterial({ 
+        depthTest: false,
+        color: (pos[3]) ? pos[3] : "#ff0000", // Red color
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.1 // Make the circles semi-transparent
+    });
+    const circle = new THREE.Mesh(cylinderGeometry, circleMaterial);
+    circle.position.set(-pos[0], -pos[2], pos[1]);
+    circle.rotateX(Math.PI * 0.5); // Rotate the circle to face the camera
+
+    // Add the circle to the map object
+    mapObject.add(circle);
+
+    // Store the circle in the map object
+    circle.userData.key = key; // Store the key for reference
+});
+
+// Global variable to store the highlighted circle
+let highlightedCircle = null;
+
+// Update the angle threshold to 10 degrees
+const ANGLE_THRESHOLD = Math.PI / 18; // 10 degrees in radians
+
+var lastCircle = null;
+window.getLastCircle=function(){
+    if(lastCircle){
+        return lastCircle.userData.key;
+    }
+    return lastCircle;
+}
+// Function to check the direction of the camera and highlight the closest circle
+function checkCameraDirection() {
+    const cameraDirection = new THREE.Vector3();
+    camera.getWorldDirection(cameraDirection);
+    cameraDirection.y = 0; // Ignore vertical axis
+    cameraDirection.normalize();
+
+    let closestCircle = null;
+    let closestDistance = Infinity;
+
+    mapObject.children.forEach((child) => {
+        if (child instanceof THREE.Mesh) {
+            const circlePosition = new THREE.Vector3();
+            child.getWorldPosition(circlePosition);
+            circlePosition.y = 0; // Ignore vertical axis
+
+            const toCircle = new THREE.Vector3().subVectors(circlePosition, camera.position).normalize();
+            const angle = cameraDirection.angleTo(toCircle);
+
+            if (angle < ANGLE_THRESHOLD) { // Check if within 10 degrees
+                const distance = camera.position.distanceTo(circlePosition);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestCircle = child;
+                }
+            }
+        }
+    });
+
+    if (closestCircle !== highlightedCircle) {
+        if (highlightedCircle) {
+            highlightedCircle.material.opacity=0.1;
+            // console.log("Deselected circle:", highlightedCircle.userData.key);
+        }
+        if (closestCircle) {
+            lastCircle=closestCircle;
+            closestCircle.material.opacity=1; // Highlight color
+        } else {
+            lastCircle=null;
+        }
+        highlightedCircle = closestCircle;
+    }
+}
+
+// Add event listeners for all XR controller events
+controllerGrip1.addEventListener('connected',e=>{
+    gamePads=e.data.gamepad;
+});
+controllerGrip1.addEventListener('disconnected',e=>{
+    aPressed=null;
+    gamePads=null;
+});

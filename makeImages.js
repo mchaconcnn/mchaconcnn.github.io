@@ -3,7 +3,7 @@ const path = require('path');
 const { exec } = require('child_process');
 
 // Directory containing EXR files
-const vrFolder = path.join(__dirname, 'docs', 'vr');
+const vrFolder = path.join(__dirname, 'docs', 'vr','cuartoMami');
 const outputFolder = vrFolder; // No need to create a separate folder
 
 // Function to convert EXR to JPG using ImageMagick

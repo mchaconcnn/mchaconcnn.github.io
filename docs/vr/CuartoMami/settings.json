@@ -1,0 +1,10 @@
+{
+    "images": {
+        "day": {
+            "exposure": 1,
+            "gamma": 2.2,
+            "contrast": 10,
+            "center": 20
+        }
+    }
+}

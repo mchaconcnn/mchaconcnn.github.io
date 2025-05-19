@@ -35,5 +35,6 @@ browserSync.init({
     server: './docs',
     port: 8080,
     https: httpsOptions, // Use self-signed certificates
-    files: ['./docs/**/*'] // Monitor changes in the ./docs directory
+    files: ['./docs/**/*'],
+    ghostMode: false
 });

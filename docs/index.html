@@ -1,14 +1,272 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>VR Esferas Navegables</title>
-  <style>body { margin: 0; }</style>
+  <title>Teseracto 4D</title>
+  <style>body { margin: 0; overflow: hidden; }</style>
 </head>
 <body>
-<script type="module" src="js/debug.js"></script>
-  
-</script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.157/build/three.min.js"></script>
+  <script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
+    // Listener para redimensionar la ventana
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    camera.position.z = 5;
+
+    // 1. Crear los 16 vértices del teseracto (coordenadas 4D)
+    function generateTesseractVertices() {
+      const points = [];
+      for (let x = -1; x <= 1; x += 2)
+        for (let y = -1; y <= 1; y += 2)
+          for (let z = -1; z <= 1; z += 2)
+            for (let w = -1; w <= 1; w += 2)
+              points.push([x, y, z, w]);
+      return points;
+    }
+
+    function generateHypersphereVertices(steps = 4) {
+      const points = [];
+      for (let i = 0; i < steps; i++) {
+        for (let j = 0; j < steps; j++) {
+          for (let k = 0; k < steps; k++) {
+            for (let l = 0; l < steps; l++) {
+              const theta1 = (i / steps) * Math.PI;
+              const theta2 = (j / steps) * 2 * Math.PI;
+              const theta3 = (k / steps) * 2 * Math.PI;
+              const theta4 = (l / steps) * 2 * Math.PI;
+              const r = 1;
+              const x = r * Math.sin(theta1) * Math.sin(theta2) * Math.sin(theta3);
+              const y = r * Math.sin(theta1) * Math.sin(theta2) * Math.cos(theta3);
+              const z = r * Math.sin(theta1) * Math.cos(theta2);
+              const w = r * Math.cos(theta1);
+              points.push([x, y, z, w]);
+            }
+          }
+        }
+      }
+      return points;
+    }
+
+    // 2. Rotaciones en 4D (por ejemplo entre X y W)
+    function rotate4D(points, angle, axis1, axis2) {
+      const sin = Math.sin(angle);
+      const cos = Math.cos(angle);
+      return points.map(p => {
+        const r = [...p];
+        const a = r[axis1];
+        const b = r[axis2];
+        r[axis1] = a * cos - b * sin;
+        r[axis2] = a * sin + b * cos;
+        return r;
+      });
+    }
+
+    // Controles:
+    // W/S: mover arriba/abajo (Y)
+    // A/D: mover izquierda/derecha (X)
+    // Q/E: mover en el eje W (dimensión 4)
+
+    let cameraPosition4D = [0, 0, 0, 0];
+
+    // Ángulos de rotación para cada plano
+    const rotationAngles = {
+      xy: 0,
+      xz: 0,
+      yz: 0,
+      xw: 0,
+    };
+
+    function project4Dto3D(p4, distance = 3) {
+      const translated = p4.map((v, i) => v - cameraPosition4D[i]);
+      const w = distance / (distance - translated[3]);
+      return [translated[0] * w, translated[1] * w, translated[2] * w];
+    }
+
+    document.addEventListener("keydown", (e) => {
+      const step = 0.1;
+      const angleStep = 0.02;
+
+      if (e.key === "0") {
+        const duration = 30; // frames
+        const startPosition = [...cameraPosition4D];
+        const startAngles = { ...rotationAngles };
+        let frame = 0;
+
+        function recenterStep() {
+          const t = (duration - frame) / duration;
+          for (let i = 0; i < 4; i++) {
+            cameraPosition4D[i] = startPosition[i] * t;
+          }
+          rotationAngles.xy = startAngles.xy * t;
+          rotationAngles.xz = startAngles.xz * t;
+          rotationAngles.yz = startAngles.yz * t;
+          rotationAngles.xw = startAngles.xw * t;
+
+          frame++;
+          if (frame <= duration) {
+            requestAnimationFrame(recenterStep);
+          }
+        }
+
+        recenterStep();
+      }
+
+      if (e.key === "1") {
+        vertices4D = generateTesseractVertices();
+        resetGeometry();
+      }
+      if (e.key === "2") {
+        vertices4D = generateHypersphereVertices(4);
+        resetGeometry();
+      }
+
+      // Movimiento (traslación)
+      if (e.key === "w") cameraPosition4D[2] -= step; // Z-
+      if (e.key === "s") cameraPosition4D[2] += step; // Z+
+      if (e.key === "a") cameraPosition4D[0] -= step; // X-
+      if (e.key === "d") cameraPosition4D[0] += step; // X+
+      if (e.key === "q") cameraPosition4D[1] += step; // Y+
+      if (e.key === "z") cameraPosition4D[1] -= step; // Y-
+      if (e.key === "e") cameraPosition4D[3] -= step; // W-
+      if (e.key === "c") cameraPosition4D[3] += step; // W+
+
+      // Rotaciones
+      if (e.key === "ArrowUp") rotationAngles.yz -= angleStep; // Yaw up
+      if (e.key === "ArrowDown") rotationAngles.yz += angleStep; // Yaw down
+      if (e.key === "ArrowLeft") rotationAngles.xz -= angleStep; // Pitch left
+      if (e.key === "ArrowRight") rotationAngles.xz += angleStep; // Pitch right
+      if (e.key === "[") rotationAngles.xy -= angleStep; // Roll left
+      if (e.key === "]") rotationAngles.xy += angleStep; // Roll right
+      if (e.key === "o") rotationAngles.xw -= angleStep; // 4D left
+      if (e.key === "l") rotationAngles.xw += angleStep; // 4D right
+    });
+
+    // 4. Crear puntos en la escena
+    const spheres = [];
+    // 5. Crear líneas entre vértices conectados (vecinos a 1 dimensión de distancia)
+    const edges = [];
+    let vertices4D = generateTesseractVertices();
+    resetGeometry();
+
+    function hammingDist(a, b) {
+      return a.reduce((acc, val, i) => acc + (val !== b[i] ? 1 : 0), 0);
+    }
+
+    function resetGeometry() {
+      // Remove old spheres and lines
+      for (const s of spheres) scene.remove(s);
+      for (const e of edges) scene.remove(e.line);
+      spheres.length = 0;
+      edges.length = 0;
+
+      // Add new spheres
+      for (let i = 0; i < vertices4D.length; i++) {
+        const geometry = new THREE.SphereGeometry(0.05, 12, 12);
+        const material = new THREE.MeshBasicMaterial({ color: 0xff0055 });
+        const sphere = new THREE.Mesh(geometry, material);
+        scene.add(sphere);
+        spheres.push(sphere);
+      }
+
+      const isTesseract = vertices4D.length === 16;
+
+      if (isTesseract) {
+        for (let i = 0; i < vertices4D.length; i++) {
+          for (let j = i + 1; j < vertices4D.length; j++) {
+            if (hammingDist(vertices4D[i], vertices4D[j]) === 1) {
+              const geometry = new THREE.BufferGeometry();
+              geometry.setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+              const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffffff }));
+              scene.add(line);
+              edges.push({ line, a: i, b: j });
+            }
+          }
+        }
+      } else {
+        // For hypersphere: connect points closer than threshold
+        const threshold = 0.3;
+        for (let i = 0; i < vertices4D.length; i++) {
+          for (let j = i + 1; j < vertices4D.length; j++) {
+            // Euclidean 4D distance
+            const dist = Math.sqrt(vertices4D[i].reduce((acc, v, idx) => acc + Math.pow(v - vertices4D[j][idx], 2), 0));
+            if (dist < threshold) {
+              const geometry = new THREE.BufferGeometry();
+              geometry.setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+              const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x8888ff }));
+              scene.add(line);
+              edges.push({ line, a: i, b: j });
+            }
+          }
+        }
+      }
+    }
+
+    // 6. Animación
+    function animate() {
+      requestAnimationFrame(animate);
+      // Aplicar rotaciones según los ángulos acumulados
+      let rotatedVertices = [...vertices4D];
+      rotatedVertices = rotate4D(rotatedVertices, rotationAngles.xy, 0, 1);
+      rotatedVertices = rotate4D(rotatedVertices, rotationAngles.xz, 0, 2);
+      rotatedVertices = rotate4D(rotatedVertices, rotationAngles.yz, 1, 2);
+      rotatedVertices = rotate4D(rotatedVertices, rotationAngles.xw, 0, 3);
+      const projected = rotatedVertices.map(p => project4Dto3D(p));
+
+      // Actualizar posición de las esferas
+      for (let i = 0; i < spheres.length; i++) {
+        const [x, y, z] = projected[i];
+        spheres[i].position.set(x, y, z);
+      }
+
+      // Actualizar líneas
+      for (const edge of edges) {
+        const a = projected[edge.a];
+        const b = projected[edge.b];
+        edge.line.geometry.setFromPoints([
+          new THREE.Vector3(...a),
+          new THREE.Vector3(...b)
+        ]);
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
 </body>
+  <div id="controls" style="
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 10px;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    font-family: sans-serif;
+    font-size: 14px;
+    border-radius: 5px;
+    z-index: 1;">
+    <strong>Controles 4D:</strong><br>
+    Desplazamiento:<br>
+    - W / S → acercar / alejar (Z)<br>
+    - A / D → izquierda / derecha (X)<br>
+    - Q / Z → arriba / abajo (Y)<br>
+    - E / C → eje W (4ta dimensión)<br><br>
+    Giro:<br/>
+    - Flechas horizontales rotar pitch<br>
+     - Flechas verticales rotar yaw<br>
+    - [ / ] → roll<br>
+    O / L → rotar en 4D (X-W)<br><br>
+    Figura:<br>
+    1 → Teseracto<br>
+    2 → Hiperesfera (aproximada)
+  </div>
 </html>

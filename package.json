@@ -25,5 +25,9 @@
   "devDependencies": {
     "browser-sync": "^3.0.4",
     "esbuild": "^0.18.0"
+  },
+  "dependencies": {
+    "@webxr-input-profiles/motion-controllers": "^1.0.0",
+    "three": "^0.176.0"
   }
 }

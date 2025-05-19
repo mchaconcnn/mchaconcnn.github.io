@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>WebXR VR Layers</title>
+		<style>
+			body {
+				margin: 0;
+				overflow: hidden;
+			}
+			canvas {
+				display: block;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "./three/build/three.module.js",
+					"OrbitControls": "./three/examples/jsm/controls/OrbitControls.js",
+					"VRButton": "./three/examples/jsm/webxr/VRButton.js",
+					"three/addons/": "./three/examples/jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+			import * as THREE from "three";
+			import { VRButton } from "VRButton";
+			import { OrbitControls } from "OrbitControls";
+			import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
+			import { XRHandModelFactory } from "three/addons/webxr/XRHandModelFactory.js";
+
+			THREE.ColorManagement.enabled = true;
+
+			let renderer, scene, camera, texture, xrRefSpace, xrGLFactory, session, equirectLayer, gl;
+			let controls, projectionLayer;
+
+			let hand1, hand2;
+			let controller1, controller2;
+			let controllerGrip1, controllerGrip2;
+
+			scene = new THREE.Scene();
+			scene.background = new THREE.Color(0x00FF00);
+
+			const debugCube = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+			const debugMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+			const debugMesh = new THREE.Mesh(debugCube, debugMaterial);
+			debugMesh.position.set(1, -0.4, 0);
+			scene.add(debugMesh);
+
+			camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+			camera.position.set(0, 0, 0);
+			camera.layers.enable(1);
+
+			const geometry = new THREE.SphereGeometry(10, 60, 10);
+			const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide });
+			const sphereL = new THREE.Mesh(geometry, material);
+			const sphereR = new THREE.Mesh(geometry, material);
+			sphereL.layers.set(1);
+			sphereR.layers.set(2);
+			scene.add(sphereL);
+			scene.add(sphereR);
+
+			console.log("Loading texture...");
+			const loader = new THREE.TextureLoader();
+			texture = await loader.loadAsync("./media/cuartoLaura/color0001-low.jpg");
+			texture.encoding = THREE.sRGBEncoding;
+
+			const ttb = splitTopBottom(texture);
+			sphereR.material.map = ttb.right;
+			sphereL.material.map = ttb.left;
+			sphereR.material.needsUpdate = true;
+
+			ttb.left.mapping = THREE.EquirectangularReflectionMapping;
+			scene.environment = ttb.left;
+
+			sphereL.material.needsUpdate = true;
+
+			// material.map = texture;
+
+			async function xrSessionStarted() {
+				session = renderer.xr.getSession();
+				gl = renderer.getContext();
+				await gl.makeXRCompatible();
+				xrRefSpace = await session.requestReferenceSpace("local");
+				let canBind = true;
+				try {
+					xrGLFactory = new XRWebGLBinding(session, gl);
+				} catch (e) {
+					canBind = false;
+				}
+
+				if (canBind == true && xrGLFactory.createEquirectLayer && xrGLFactory.createProjectionLayer) {
+					console.log("XR session started successfully. Using equirect layer.");
+					// sphereR.visible = false;
+					// sphereL.visible = false;
+					equirectLayer = xrGLFactory.createEquirectLayer({
+						space: xrRefSpace,
+						viewPixelWidth: texture.image.width,
+						viewPixelHeight: texture.image.height / 2,
+						layout: "stereo-top-bottom",
+						centralHorizontalAngle: Math.PI * 2,
+						upperVerticalAngle: Math.PI / 2.0,
+						lowerVerticalAngle: -Math.PI / 2.0,
+						radius: 10,
+						isStatic: true,
+					});
+					projectionLayer = xrGLFactory.createProjectionLayer({
+						space: xrRefSpace,
+						colorFormat: gl.RGBA8,
+						depthFormat: gl.DEPTH24_STENCIL8,
+					});
+					//projectionLayer = xrGLFactory.createProjectionLayer({ space: xrRefSpace });
+					
+					camera.layers.enable(0); // default
+					camera.layers.enable(1); // sphereL
+					camera.layers.enable(2); // sphereR
+
+					// session.updateRenderState({
+					// 	layers: [equirectLayer, projectionLayer],
+					// });
+
+					session.updateRenderState({
+						layers: [projectionLayer]
+					});
+					// console.log(session.renderState.layers);
+					// session.updateRenderState({
+					// 	layers: [equirectLayer,session.renderState.layers[ 0 ]],
+					// });
+				} else {
+				}
+				// session.requestAnimationFrame(animate);
+			}
+
+			async function init() {
+				try {
+					console.log("Creating WebGLRenderer...");
+					renderer = new THREE.WebGLRenderer({ antialias: false });
+					renderer.setPixelRatio(window.devicePixelRatio);
+					renderer.setSize(window.innerWidth, window.innerHeight);
+					renderer.setAnimationLoop(animate);
+					renderer.setClearAlpha(1);
+					renderer.setClearColor(new THREE.Color(0), 0);
+					renderer.xr.enabled = true;
+					renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+					// renderer.toneMapping = THREE.ACESFilmicToneMapping;
+					// renderer.useLegacyLights=false;
+					// renderer.toneMapping = THREE.NoToneMapping;
+					// renderer.toneMappingExposure = 0.1;
+
+					renderer.xr.addEventListener("sessionstart", xrSessionStarted);
+					renderer.xr.addEventListener("sessionend", () => {
+						console.log("Session ended");
+						xrGLFactory = null;
+						session = null;
+						if (equirectLayer) {
+							equirectLayer = null;
+						} else {
+							sphereR.visible = true;
+							sphereL.visible = true;
+						}
+					});
+
+					document.body.appendChild(renderer.domElement);
+					document.body.appendChild(
+						VRButton.createButton(renderer, {
+							requiredFeatures: ["hand-tracking"],
+							optionalFeatures: ["local-floor", "layers"],
+						})
+					);
+
+					controls = new OrbitControls(camera, renderer.domElement);
+					controls.enableDamping = true;
+					controls.dampingFactor = 0.05;
+					controls.enablePan = true;
+					controls.minDistance = 0.1;
+					controls.maxDistance = 10;
+					controls.target.set(1, 0, 0);
+					controls.update();
+
+					// controllers
+
+					controller1 = renderer.xr.getController(0);
+					scene.add(controller1);
+
+					controller2 = renderer.xr.getController(1);
+					scene.add(controller2);
+
+					const controllerModelFactory = new XRControllerModelFactory();
+					const handModelFactory = new XRHandModelFactory();
+
+					// Hand 1
+					controllerGrip1 = renderer.xr.getControllerGrip(0);
+					controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+					scene.add(controllerGrip1);
+
+					hand1 = renderer.xr.getHand(0);
+					hand1.add(handModelFactory.createHandModel(hand1, "mesh"));
+
+					scene.add(hand1);
+
+					// Hand 2
+					controllerGrip2 = renderer.xr.getControllerGrip(1);
+					controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+					scene.add(controllerGrip2);
+
+					hand2 = renderer.xr.getHand(1);
+					hand2.add(handModelFactory.createHandModel(hand2, "mesh"));
+					scene.add(hand2);
+
+					// scene.add( new THREE.HemisphereLight( 0xbcbcbc, 0xa5a5a5, 3 ) );
+
+					// const light = new THREE.DirectionalLight( 0xffffff, 3 );
+					// light.position.set( 0, 6, 0 );
+					// light.castShadow = true;
+					// light.shadow.camera.top = 2;
+					// light.shadow.camera.bottom = - 2;
+					// light.shadow.camera.right = 2;
+					// light.shadow.camera.left = - 2;
+					// light.shadow.mapSize.set( 4096, 4096 );
+					// scene.add( light );
+				} catch (error) {
+					console.error("Error during initialization:", error);
+				}
+				window.addEventListener("resize", onWindowResize);
+				onWindowResize();
+			}
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function animate(t, frame) {
+				// if (equirectLayer && equirectLayer.needsRedraw) {
+				// 	const pose = frame.getViewerPose(xrRefSpace);
+				// 	pose.views.forEach((view) => {
+				// 		const subImage = xrGLFactory.getSubImage(equirectLayer, frame, view.eye);
+				// 		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+				// 		gl.bindTexture(gl.TEXTURE_2D, subImage.colorTexture);
+				// 		// use correct half-texture for each eye
+				// 		const img = view.eye === "left" ? splitTopBottom(texture).left.image : splitTopBottom(texture).right.image;
+				// 		gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+				// 		gl.bindTexture(gl.TEXTURE_2D, null);
+				// 	});
+				// }
+
+				if (projectionLayer) {
+					const pose = frame.getViewerPose(xrRefSpace);
+					pose.views.forEach((view) => {
+						const subImage = xrGLFactory.getViewSubImage(projectionLayer, view);
+						if (subImage) {
+							// gl.bindFramebuffer(gl.FRAMEBUFFER, subImage.framebuffer);
+							gl.viewport(subImage.viewport.x, subImage.viewport.y, subImage.viewport.width, subImage.viewport.height);
+							camera.projectionMatrix.fromArray(view.projectionMatrix);
+							camera.matrixWorldInverse.fromArray(view.transform.inverse.matrix);
+							console.log("YES:");
+							// renderer.render(scene, camera);
+						} else {
+							console.warn("⚠ subImage is null for view", view.eye);
+							// renderer.render(scene, camera);
+						}
+					});
+					renderer.render(scene, camera);
+				} else {
+					console.log("Equirect layer updated per eye");
+					renderer.render(scene, camera);
+				}
+			}
+
+			// function animate(t, frame) {
+			// 	// if (session === undefined) return;
+			// 	try {
+			// 		if (equirectLayer && equirectLayer.needsRedraw) {
+			// 			const pose = frame.getViewerPose(xrRefSpace);
+			// 			pose.views.forEach((view) => {
+			// 				const subImage = xrGLFactory.getSubImage(equirectLayer, frame, view.eye);
+			// 				gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+			// 				gl.bindTexture(gl.TEXTURE_2D, subImage.colorTexture);
+			// 				// use correct half-texture for each eye
+			// 				const img = (view.eye === 'left') ? splitTopBottom(texture).left.image : splitTopBottom(texture).right.image;
+			// 				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+			// 				gl.bindTexture(gl.TEXTURE_2D, null);
+			// 			});
+			// 			if(projectionLayer){
+			// 				const pose=frame.getViewerPose(xrRefSpace);
+			// 				for(let i=0;i<pose.views.length;i++){
+			// 					const view=pose.views[i];
+			// 					const subImage = xrGLFactory.getViewSubImage(projectionLayer, view);
+
+			// 					gl.bindFramebuffer(gl.FRAMEBUFFER, subImage.framebuffer);
+			// 					gl.viewport(
+			// 						subImage.viewport.x,
+			// 						subImage.viewport.y,
+			// 						subImage.viewport.width,
+			// 						subImage.viewport.height
+			// 					);
+			// 					camera.projectionMatrix.fromArray(view.projectionMatrix);
+			// 					camera.matrixWorldInverse.fromArray(view.transform.inverse.matrix);
+			// 					// renderer.render(scene, camera);
+			// 				}
+			// 			}
+
+			// 			console.log("Equirect layer updated per eye");
+			// 		} else {
+			// 			//console.log("no equirect", sphereL.material.needsUpdate);
+			// 		}
+
+			// 		renderer.render(scene, camera);
+			// 	} catch (error) {
+			// 		console.error("Error during rendering:", error);
+			// 	}
+			// }
+
+			init();
+
+			function splitTopBottom(texture) {
+				const texR = texture.clone();
+				texR.repeat.set(-1, 0.5);
+				texR.offset.set(1, 0.0);
+				const texL = texture.clone();
+				texL.repeat.set(-1, 0.5);
+				texL.offset.set(1, 0.5);
+				return { left: texL, right: texR };
+			}
+		</script>
+	</head>
+	<body></body>
+</html>

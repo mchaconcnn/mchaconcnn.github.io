@@ -11,12 +11,11 @@ function build(filePath) {
       bundle: true,
       outfile: outputFilePath,
       minify: true,
+      treeShaking:true,
       sourcemap: true,
-    })
-    .then(() => {
+    }).then(() => {
       console.log(`Bundling complete! Output: ${outputFilePath}`);
-    })
-    .catch(() => {
+    }).catch(() => {
       console.error("Bundling failed.");
     });
 }

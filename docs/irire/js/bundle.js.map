@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../../irire/irire/main.js"],
-  "sourcesContent": ["console.log(\"Starting development server......!!!...\");"],
-  "mappings": ";AAAA,QAAQ,IAAI,yCAAyC;",
-  "names": []
-}

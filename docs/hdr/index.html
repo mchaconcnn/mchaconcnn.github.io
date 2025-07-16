@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HDR</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #111;
+            color:#EEE;
+            font-family: Verdana, Geneva, Tahoma, sans-serif;
+        }
+
+        main{
+            max-width: 512px;
+            margin: 3rem auto;
+        }
+
+        h1{
+            border-bottom: 1px solid #FFF;
+            font-size:20px;
+            margin-bottom: 2rem;
+        }
+        h2{
+            color: #878787;
+            border-bottom: 1px solid #878787;
+            font-size:16px;
+            font-weight: 500;;
+        }        
+
+        video {
+            max-width:512px;
+            max-height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <main>
+    <h1>HDR10 Images using a video container</h1>
+    <h2>SDR Tonemapped Image</h2>
+    <img src="img1.jpg" alt="SDR Image">    
+    
+    <h2>HDR10 Image (Dolby Vision Profile 5)</h2>
+    <video 
+  src="hdrV1.mp4" 
+  autoplay 
+  muted 
+  playsinline 
+  preload="auto" 
+  onloadeddata="this.pause();" 
+  style="width: 100%; height: auto;">
+</video>
+
+    <h2>SDR Tonemapped Image</h2>
+    <img src="im1bw.jpg" alt="SDR Image">    
+
+    <h2>HDR10 Image (Dolby Vision Profile 5)</h2>
+    <video 
+  src="v1bw.mp4" 
+  autoplay 
+  muted 
+  playsinline 
+  preload="auto" 
+  onloadeddata="this.pause();" 
+  style="width: 100%; height: auto;">
+</video>
+
+</main>
+</body>
+</html>

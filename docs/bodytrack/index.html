@@ -56,19 +56,6 @@
             margin-top: auto;
             text-align: center;
         }
-        /* Styles for the realistic skeleton images */
-        .bone {
-            position: absolute;
-            height: auto; /* Maintain aspect ratio */
-            will-change: transform; /* Optimize for animation */
-            display: none; /* Hidden by default */
-            z-index: 5; /* Sit between the UI and the video */
-            transform-origin: center; /* Default for torso/head */
-        }
-        /* Specific origin for limb bones which are positioned from one joint */
-        .limb {
-            transform-origin: 0% 50%; /* left-center */
-        }
     </style>
 </head>
 <body class="bg-black text-white">
@@ -79,27 +66,8 @@
         <canvas id="output_canvas"></canvas>
     </div>
 
-    <!-- Container for the bone images -->
-    <div id="skeleton-container">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/32a9332501069b18342c11438289433e_torso.png" id="torso" class="bone" alt="torso">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/d5727b140ed55f269a9ff5e48aa25f44_left_upper_arm.png" id="left_upper_arm" class="bone limb" alt="left upper arm">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/447a233b8a92d8d80f681a954477c762_left_forearm.png" id="left_forearm" class="bone limb" alt="left forearm">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/1d713c7c729505a467ff390235b37e3d_right_upper_arm.png" id="right_upper_arm" class="bone limb" alt="right upper arm">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/f703ed842245b73d82a4d33eb435649b_right_forearm.png" id="right_forearm" class="bone limb" alt="right forearm">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/42f9d5113d0a2717ac118b62db4c84d7_left_thigh.png" id="left_thigh" class="bone limb" alt="left thigh">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/276378c6e26b1582e0e0fca56627a6c9_left_shin.png" id="left_shin" class="bone limb" alt="left shin">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/0458b9f1d06e236371a527c81a20a4b7_right_thigh.png" id="right_thigh" class="bone limb" alt="right thigh">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/4089334547b745fd57c2a715f0119dd9_right_shin.png" id="right_shin" class="bone limb" alt="right shin">
-        <img src="https://storage.googleapis.com/gemini-prod-us-east1-9514/403759714881/2024/7/11/d282542a1068426369c0d510e82c5054_head.png" id="head" class="bone" alt="head">
-    </div>
-
     <!-- UI Elements that overlay the video feed -->
     <div class="ui-overlay">
-         <header class="text-center mb-8">
-            <h1 class="text-4xl md:text-5xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600" style="text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
-                AI Body Tracker
-            </h1>
-        </header>
 
         <div class="controls-container">
             <div class="flex items-center justify-center gap-4">
@@ -189,7 +157,6 @@
                 toggleBgButton.style.display = 'none'; // Hide the toggle button
                 video.style.display = 'none'; // Hide video element
                 isWebcamBackground = false; // Reset background state
-                 document.querySelectorAll('.bone').forEach(bone => bone.style.display = 'none'); // Hide bones
             } else {
                 webcamRunning = true;
                 webcamButton.innerText = "Disable Webcam";
@@ -259,7 +226,6 @@
                         if (!smoothedLandmarks) {
                             // If it's the first detection, initialize with a deep copy of the landmarks
                             smoothedLandmarks = JSON.parse(JSON.stringify(newLandmarks));
-                             document.querySelectorAll('.bone').forEach(bone => bone.style.display = 'block'); // Show bones
                         } else {
                             // Apply Exponential Moving Average to each landmark
                             for (let i = 0; i < newLandmarks.length; i++) {
@@ -271,15 +237,10 @@
                             }
                         }
 
-                        // Update the realistic skeleton overlay
-                        updateSkeletonOverlay(smoothedLandmarks, canvasElement);
-
-
                         // Draw the SMOOTHED landmarks and connections
                         drawingUtils.drawLandmarks(smoothedLandmarks, {
                             radius: (data) => DrawingUtils.lerp(data.from.z, -0.15, 0.1, 5, 1),
-                            color: '#FFFFFF', // white dots
-                            fillColor: '#FFFFFF'
+                            color: '#FFFFFF' // white dots
                         });
                         drawingUtils.drawConnectors(smoothedLandmarks, PoseLandmarker.POSE_CONNECTIONS, {
                             color: (data) => {
@@ -302,83 +263,14 @@
                 window.requestAnimationFrame(predictWebcam);
             }
         };
-
-        const updateSkeletonOverlay = (landmarks, canvas) => {
-            const width = canvas.width;
-            const height = canvas.height;
-
-            const boneMapping = {
-                'torso': [12, 11, 24, 23], 
-                'left_upper_arm': [11, 13],
-                'left_forearm': [13, 15],
-                'right_upper_arm': [12, 14],
-                'right_forearm': [14, 16],
-                'left_thigh': [23, 25],
-                'left_shin': [25, 27],
-                'right_thigh': [24, 26],
-                'right_shin': [26, 28],
-                'head': [0, 7, 8] 
-            };
-
-            for (const [boneId, landmarkIndices] of Object.entries(boneMapping)) {
-                const boneImg = document.getElementById(boneId);
-                if (!boneImg) continue;
-
-                const points = landmarkIndices.map(i => landmarks[i]);
-                if (points.some(p => p.visibility < 0.5)) {
-                    boneImg.style.display = 'none';
-                    continue;
-                }
-                boneImg.style.display = 'block';
-
-                if (boneId === 'head') {
-                    const nose = points[0];
-                    const leftEar = points[1];
-                    const rightEar = points[2];
-                    
-                    const headWidth = Math.hypot((leftEar.x - rightEar.x) * width, (leftEar.y - rightEar.y) * height) * 1.8;
-                    
-                    boneImg.style.width = `${headWidth}px`;
-                    boneImg.style.height = 'auto';
-                    boneImg.style.left = `${nose.x * width - headWidth / 2}px`;
-                    boneImg.style.top = `${nose.y * height - headWidth / 1.8}px`; // Adjust vertical position
-                    boneImg.style.transform = `rotate(0deg)`;
-
-                } else if (boneId === 'torso') {
-                    const shoulderMid = { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
-                    const hipMid = { x: (points[2].x + points[3].x) / 2, y: (points[2].y + points[3].y) / 2 };
-                    
-                    const centerX = (shoulderMid.x + hipMid.x) / 2 * width;
-                    const centerY = (shoulderMid.y + hipMid.y) / 2 * height;
-
-                    const torsoHeight = Math.hypot((shoulderMid.x - hipMid.x) * width, (shoulderMid.y - hipMid.y) * height) * 1.15;
-                    const torsoWidth = torsoHeight * 0.55; // Maintain aspect ratio
-                    const angle = Math.atan2(hipMid.y - shoulderMid.y, hipMid.x - shoulderMid.x) * (180 / Math.PI) - 90;
-
-                    boneImg.style.width = `${torsoWidth}px`;
-                    boneImg.style.height = `${torsoHeight}px`;
-                    boneImg.style.left = `${centerX - torsoWidth / 2}px`;
-                    boneImg.style.top = `${centerY - torsoHeight / 2}px`;
-                    boneImg.style.transform = `rotate(${angle}deg)`;
-
-                } else { // Limbs
-                    const p1 = points[0];
-                    const p2 = points[1];
-                    
-                    const length = Math.hypot((p2.x - p1.x) * width, (p2.y - p1.y) * height);
-                    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
-                    
-                    boneImg.style.width = `${length}px`;
-                    boneImg.style.height = 'auto';
-                    boneImg.style.left = `${p1.x * width}px`;
-                    boneImg.style.top = `${p1.y * height}px`;
-                    boneImg.style.transform = `translateY(-50%) rotate(${angle}deg)`;
-                }
-            }
-        };
-
     </script>
 </body>
 </html>
+
+
+
+
+
+
 
 

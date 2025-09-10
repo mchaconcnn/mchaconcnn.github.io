@@ -67,19 +67,31 @@
             top: 1rem;
             left: 1rem;
             background-color: rgba(0, 0, 0, 0.6);
-            padding: 1rem;
+            padding: 0.5rem;
             border-radius: 0.5rem;
             display: none; /* Hidden by default */
-            font-size: 0.8rem;
-            width: 250px;
+            font-size: 0.75rem;
+            width: 200px;
+        }
+        #perspective-controls h4 {
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
         }
         #perspective-controls label {
             display: block;
-            margin-bottom: 0.25rem;
+            margin-bottom: 0.1rem;
         }
         #perspective-controls input[type="range"] {
             width: 100%;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+        #toggleUiButton {
+            position: fixed;
+            bottom: 1rem;
+            left: 1rem;
+            z-index: 20;
+            display: none; /* Hidden by default */
+            pointer-events: auto;
         }
     </style>
 </head>
@@ -123,14 +135,17 @@
         </div>
 
         <div class="controls-container">
-            <div class="flex items-center justify-center gap-4">
-                 <button id="webcamButton" class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-8 rounded-full shadow-lg transform hover:scale-105 transition-transform duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+            <div class="flex items-center justify-center gap-2">
+                 <button id="webcamButton" class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 text-sm rounded-full shadow-lg transform hover:scale-105 transition-transform duration-300 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
                     Enable Webcam
                 </button>
-                <button id="toggleBgButton" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-full shadow-lg transform hover:scale-105 transition-transform duration-300 ease-in-out" style="display: none;">
+                <button id="toggleBgButton" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 text-sm rounded-full shadow-lg transform hover:scale-105 transition-transform duration-300 ease-in-out" style="display: none;">
                     Show Webcam
                 </button>
-                <select id="cameraSelector" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-full shadow-lg" style="display: none; pointer-events: auto;"></select>
+                <select id="cameraSelector" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-3 text-sm rounded-full shadow-lg" style="display: none; pointer-events: auto;"></select>
+                <button id="fullscreenButton" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 text-sm rounded-full shadow-lg transform hover:scale-105 transition-transform duration-300 ease-in-out">
+                    Fullscreen
+                </button>
             </div>
              <div id="loading" class="text-gray-400 mt-4" style="display: none;">
                 <svg class="animate-spin h-5 w-5 mr-3 inline-block" viewBox="0 0 24 24">
@@ -141,6 +156,11 @@
             </div>
         </div>
     </div>
+
+    <!-- This button is outside the main UI overlay so it doesn't get hidden -->
+    <button id="toggleUiButton" class="bg-gray-800 bg-opacity-50 hover:bg-opacity-75 text-white font-semibold py-1 px-3 rounded-full shadow-lg text-xs">
+        Hide UI
+    </button>
 
     <!-- MediaPipe Vision Tasks -->
     <script type="module">
@@ -160,6 +180,9 @@
         const toggleBgButton = document.getElementById("toggleBgButton");
         const perspectiveControls = document.getElementById("perspective-controls");
         const cameraSelector = document.getElementById("cameraSelector");
+        const toggleUiButton = document.getElementById("toggleUiButton");
+        const controlsContainer = document.querySelector(".controls-container");
+        const fullscreenButton = document.getElementById("fullscreenButton");
 
         let poseLandmarker = undefined;
         let runningMode = "VIDEO";
@@ -169,8 +192,31 @@
         let smoothedLandmarks; // Variable to store the smoothed landmark data
         let isWebcamBackground = false; // State for background toggle
         let listenerAdded = false;
+        let isUiVisible = true;
 
-        // --- 1. INITIALIZE THE MODEL ---
+        // --- 1. COOKIE HELPER FUNCTIONS ---
+        function setCookie(name, value, days) {
+            let expires = "";
+            if (days) {
+                const date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax";
+        }
+
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const ca = document.cookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+            }
+            return null;
+        }
+
+        // --- 1B. INITIALIZE THE MODEL ---
         const createPoseLandmarker = async () => {
             const vision = await FilesetResolver.forVisionTasks(
                 "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
@@ -223,6 +269,12 @@
         // Starts the webcam stream with a given device ID.
         function startStreamFromSelector() {
             const deviceId = cameraSelector.value;
+
+            // Load saved settings for this camera from cookies
+            loadSettingsForCamera(deviceId);
+            // Instantly apply the loaded settings
+            if (webcamRunning) applyPerspectiveTransform();
+
             const constraints = deviceId ? { video: { deviceId: { exact: deviceId } } } : { video: true };
 
             // Stop any previous stream.
@@ -261,13 +313,18 @@
                 toggleBgButton.style.display = 'none';
                 perspectiveControls.style.display = 'none';
                 cameraSelector.style.display = 'none';
+                toggleUiButton.style.display = 'none';
                 video.style.display = 'none';
                 isWebcamBackground = false;
             } else {
                 webcamRunning = true;
                 webcamButton.innerText = "Disable Webcam";
-                toggleBgButton.style.display = 'inline-block';
-                perspectiveControls.style.display = 'block';
+                toggleUiButton.style.display = 'block';
+                // Only show the main controls if the UI is not hidden
+                if(isUiVisible) {
+                    toggleBgButton.style.display = 'inline-block';
+                    perspectiveControls.style.display = 'block';
+                }
                 toggleBgButton.innerText = 'Show Webcam';
                 
                 await populateCameraSelector();
@@ -290,6 +347,49 @@
                 toggleBgButton.innerText = 'Show Webcam';
             }
         });
+
+        toggleUiButton.addEventListener('click', () => {
+            isUiVisible = !isUiVisible;
+            if (isUiVisible) {
+                perspectiveControls.style.display = 'block';
+                controlsContainer.style.display = 'block'; // Or 'flex' if it was a flex container
+                toggleUiButton.innerText = 'Hide UI';
+            } else {
+                perspectiveControls.style.display = 'none';
+                controlsContainer.style.display = 'none';
+                toggleUiButton.innerText = 'Show UI';
+            }
+        });
+
+        fullscreenButton.addEventListener('click', () => {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+
+            const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+            const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+            if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+                requestFullScreen.call(docEl);
+            } else {
+                cancelFullScreen.call(doc);
+            }
+        });
+
+        // Handles changes in fullscreen state (e.g., user pressing ESC)
+        function handleFullscreenChange() {
+            const doc = window.document;
+            if (doc.fullscreenElement || doc.mozFullScreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement) {
+                fullscreenButton.innerText = 'Exit Fullscreen';
+            } else {
+                fullscreenButton.innerText = 'Fullscreen';
+            }
+        }
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
 
         // --- 3. PREDICTION LOOP ---
         const startPredictionLoop = () => {
@@ -350,7 +450,47 @@
             }
         };
 
-        // --- 4. PERSPECTIVE TRANSFORM LOGIC ---
+        // --- 4. PERSPECTIVE AND SETTINGS LOGIC ---
+
+        function saveSettingsForCurrentCamera() {
+            if (!webcamRunning) return;
+            const deviceId = cameraSelector.value;
+            if (!deviceId) return;
+
+            const settings = {
+                tlx: document.getElementById('tlx').value,
+                tly: document.getElementById('tly').value,
+                trx: document.getElementById('trx').value,
+                try: document.getElementById('try').value,
+                brx: document.getElementById('brx').value,
+                bry: document.getElementById('bry').value,
+                blx: document.getElementById('blx').value,
+                bly: document.getElementById('bly').value,
+            };
+            
+            setCookie(`perspective_settings_${deviceId}`, JSON.stringify(settings), 365);
+        }
+
+        function loadSettingsForCamera(deviceId) {
+            if (!deviceId) return;
+            const cookie = getCookie(`perspective_settings_${deviceId}`);
+            if (cookie) {
+                try {
+                    const settings = JSON.parse(cookie);
+                    document.getElementById('tlx').value = settings.tlx;
+                    document.getElementById('tly').value = settings.tly;
+                    document.getElementById('trx').value = settings.trx;
+                    document.getElementById('try').value = settings.try;
+                    document.getElementById('brx').value = settings.brx;
+                    document.getElementById('bry').value = settings.bry;
+                    document.getElementById('blx').value = settings.blx;
+                    document.getElementById('bly').value = settings.bly;
+                } catch (e) {
+                    console.error("Failed to parse perspective settings from cookie:", e);
+                }
+            }
+        }
+
         const applyPerspectiveTransform = () => {
              if (!webcamRunning) return;
             const w = liveView.clientWidth;
@@ -368,9 +508,12 @@
         
         window.addEventListener('resize', applyPerspectiveTransform);
         
-        // Add event listeners to all sliders to update the transform on change
+        // Add event listeners to all sliders to update the transform and save settings on change
         document.querySelectorAll('#perspective-controls input[type="range"]').forEach(slider => {
-            slider.addEventListener('input', applyPerspectiveTransform);
+            slider.addEventListener('input', () => {
+                applyPerspectiveTransform();
+                saveSettingsForCurrentCamera();
+            });
         });
 
         function getTransform(srcPts, dstPts) {
@@ -427,4 +570,8 @@
     </script>
 </body>
 </html>
+
+
+
+
 

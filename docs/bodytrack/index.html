@@ -130,6 +130,7 @@
                 <button id="toggleBgButton" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-full shadow-lg transform hover:scale-105 transition-transform duration-300 ease-in-out" style="display: none;">
                     Show Webcam
                 </button>
+                <select id="cameraSelector" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-full shadow-lg" style="display: none; pointer-events: auto;"></select>
             </div>
              <div id="loading" class="text-gray-400 mt-4" style="display: none;">
                 <svg class="animate-spin h-5 w-5 mr-3 inline-block" viewBox="0 0 24 24">
@@ -158,6 +159,7 @@
         const liveView = document.getElementById("liveView");
         const toggleBgButton = document.getElementById("toggleBgButton");
         const perspectiveControls = document.getElementById("perspective-controls");
+        const cameraSelector = document.getElementById("cameraSelector");
 
         let poseLandmarker = undefined;
         let runningMode = "VIDEO";
@@ -166,6 +168,7 @@
         let lastVideoTime = -1;
         let smoothedLandmarks; // Variable to store the smoothed landmark data
         let isWebcamBackground = false; // State for background toggle
+        let listenerAdded = false;
 
         // --- 1. INITIALIZE THE MODEL ---
         const createPoseLandmarker = async () => {
@@ -193,9 +196,55 @@
         webcamButton.disabled = true;
         loadingElement.style.display = 'block';
         createPoseLandmarker();
+        
+        // --- 2. WEBCAM AND CONTROLS LOGIC ---
+        
+        // Populates the camera selector dropdown.
+        async function populateCameraSelector() {
+            cameraSelector.innerHTML = ''; // Clear existing options
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                if (videoDevices.length === 0) throw new Error("No camera devices found.");
+                
+                videoDevices.forEach((device, i) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.innerText = device.label || `Camera ${i + 1}`;
+                    cameraSelector.appendChild(option);
+                });
+                cameraSelector.style.display = 'inline-block';
+            } catch (err) {
+                console.error("Could not enumerate devices:", err);
+                cameraSelector.style.display = 'none';
+            }
+        }
 
-        // --- 2. ENABLE WEBCAM AND START PREDICTIONS ---
-        const enableCam = (event) => {
+        // Starts the webcam stream with a given device ID.
+        function startStreamFromSelector() {
+            const deviceId = cameraSelector.value;
+            const constraints = deviceId ? { video: { deviceId: { exact: deviceId } } } : { video: true };
+
+            // Stop any previous stream.
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+
+            navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
+                video.srcObject = stream;
+                // Add the listener for when video data is loaded, but only once.
+                if (!listenerAdded) {
+                    video.addEventListener("loadeddata", startPredictionLoop);
+                    listenerAdded = true;
+                }
+            }).catch((err) => {
+                console.error("Error accessing webcam: ", err);
+                webcamRunning = false;
+                webcamButton.innerText = "Enable Webcam";
+            });
+        }
+
+        const enableCam = async (event) => {
             if (!poseLandmarker) {
                 console.log("Wait! poseLandmarker not loaded yet.");
                 return;
@@ -205,35 +254,31 @@
                 webcamRunning = false;
                 webcamButton.innerText = "Enable Webcam";
                 video.pause();
-                video.srcObject.getTracks().forEach(track => track.stop());
+                if (video.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
                 video.srcObject = null;
                 canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-                smoothedLandmarks = undefined; // Reset smoothing on disable
-                toggleBgButton.style.display = 'none'; // Hide the toggle button
-                perspectiveControls.style.display = 'none'; // Hide controls
-                video.style.display = 'none'; // Hide video element
-                isWebcamBackground = false; // Reset background state
+                smoothedLandmarks = undefined;
+                toggleBgButton.style.display = 'none';
+                perspectiveControls.style.display = 'none';
+                cameraSelector.style.display = 'none';
+                video.style.display = 'none';
+                isWebcamBackground = false;
             } else {
                 webcamRunning = true;
                 webcamButton.innerText = "Disable Webcam";
-                toggleBgButton.style.display = 'inline-block'; // Show the toggle button
-                perspectiveControls.style.display = 'block'; // Show controls
-                toggleBgButton.innerText = 'Show Webcam'; // Reset button text
-
-                // Activate the webcam stream
-                navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-                    video.srcObject = stream;
-                    // When the video data is loaded, set canvas dimensions and start the loop
-                    video.addEventListener("loadeddata", startPredictionLoop);
-                }).catch((err) => {
-                    console.error("Error accessing webcam: ", err);
-                    webcamRunning = false;
-                    webcamButton.innerText = "Enable Webcam";
-                });
+                toggleBgButton.style.display = 'inline-block';
+                perspectiveControls.style.display = 'block';
+                toggleBgButton.innerText = 'Show Webcam';
+                
+                await populateCameraSelector();
+                startStreamFromSelector();
             }
         };
 
         webcamButton.addEventListener("click", enableCam);
+        cameraSelector.addEventListener('change', () => {
+            if (webcamRunning) startStreamFromSelector();
+        });
 
         toggleBgButton.addEventListener("click", () => {
             isWebcamBackground = !isWebcamBackground;
@@ -245,136 +290,92 @@
                 toggleBgButton.innerText = 'Show Webcam';
             }
         });
-        
+
         // --- 3. PREDICTION LOOP ---
         const startPredictionLoop = () => {
-            // Set canvas size to match video feed ONCE
+            // Set canvas size to match video feed ONCE per new stream
             canvasElement.width = video.videoWidth;
             canvasElement.height = video.videoHeight;
-            
-            // Calculate and apply the perspective transform
             applyPerspectiveTransform();
-
-            // Start the continuous prediction loop
             predictWebcam();
         }
 
         const predictWebcam = async () => {
-            // This check prevents the model from processing a frame before the video is ready,
-            // which is the cause of the "ROI width and height must be > 0" error.
             if (video.videoWidth === 0 || video.videoHeight === 0) {
-                if (webcamRunning) {
-                    window.requestAnimationFrame(predictWebcam);
-                }
-                return; // Skip this frame if dimensions are not available yet.
+                if (webcamRunning) window.requestAnimationFrame(predictWebcam);
+                return;
             }
 
-            // Smoothing factor - lower value means more smoothing but more latency
             const smoothingFactor = 0.25;
-
             let startTimeMs = performance.now();
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
                 poseLandmarker.detectForVideo(video, startTimeMs, (result) => {
                     canvasCtx.save();
-                    
-                    // Clear canvas. If webcam is visible, this makes it transparent.
                     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-                    
-                    // If webcam background is off, draw a black background.
                     if (!isWebcamBackground) {
                         canvasCtx.fillStyle = "black";
                         canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
                     }
 
-                    // --- Smoothing Logic ---
                     if (result.landmarks && result.landmarks.length > 0) {
                         const newLandmarks = result.landmarks[0];
 
                         if (!smoothedLandmarks) {
-                            // If it's the first detection, initialize with a deep copy of the landmarks
                             smoothedLandmarks = JSON.parse(JSON.stringify(newLandmarks));
                         } else {
-                            // Apply Exponential Moving Average to each landmark
                             for (let i = 0; i < newLandmarks.length; i++) {
                                 smoothedLandmarks[i].x = smoothingFactor * newLandmarks[i].x + (1 - smoothingFactor) * smoothedLandmarks[i].x;
                                 smoothedLandmarks[i].y = smoothingFactor * newLandmarks[i].y + (1 - smoothingFactor) * smoothedLandmarks[i].y;
                                 smoothedLandmarks[i].z = smoothingFactor * newLandmarks[i].z + (1 - smoothingFactor) * smoothedLandmarks[i].z;
-                                // We can just take the latest visibility value
                                 smoothedLandmarks[i].visibility = newLandmarks[i].visibility;
                             }
                         }
 
-                        // Draw the SMOOTHED landmarks and connections
                         drawingUtils.drawLandmarks(smoothedLandmarks, {
                             radius: (data) => DrawingUtils.lerp(data.from.z, -0.15, 0.1, 5, 1),
-                            color: '#FFFFFF' // white dots
+                            color: '#FFFFFF'
                         });
                         drawingUtils.drawConnectors(smoothedLandmarks, PoseLandmarker.POSE_CONNECTIONS, {
-                            color: (data) => {
-                                // Gradient color for connections
-                                // const t = (data.from.z + data.to.z) / 2 + 0.5;
-                                // const r = Math.floor(255 * (1 - t) + 171 * t); // from FF to AB (pink to purple)
-                                // const g = Math.floor(0 * (1 - t) + 71 * t);
-                                // const b = Math.floor(255 * (1 - t) + 188 * t);
-                                // return `rgb(${r},${g},${b})`;
-                                return `rgb(120,0,0)`;
-                            },
-                             lineWidth: 8
+                            color: `rgb(120,0,0)`,
+                            lineWidth: 8
                         });
                     }
                     canvasCtx.restore();
                 });
             }
 
-            // Call this function again to keep predicting when the browser is ready
             if (webcamRunning) {
                 window.requestAnimationFrame(predictWebcam);
             }
         };
 
         // --- 4. PERSPECTIVE TRANSFORM LOGIC ---
-
         const applyPerspectiveTransform = () => {
              if (!webcamRunning) return;
-            // Define the destination points for the perspective transform based on the container size
             const w = liveView.clientWidth;
             const h = liveView.clientHeight;
-            
-            // Source points are the corners of the element's bounding box
             const srcPts = [ { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h } ];
-
-            // Destination points are now read dynamically from the sliders
             const dstPts = [
                 { x: w * (parseInt(document.getElementById('tlx').value) / 100), y: h * (parseInt(document.getElementById('tly').value) / 100) },
                 { x: w * (parseInt(document.getElementById('trx').value) / 100), y: h * (parseInt(document.getElementById('try').value) / 100) },
                 { x: w * (parseInt(document.getElementById('brx').value) / 100), y: h * (parseInt(document.getElementById('bry').value) / 100) },
                 { x: w * (parseInt(document.getElementById('blx').value) / 100), y: h * (parseInt(document.getElementById('bly').value) / 100) }
             ];
-
-            // Calculate and apply the transform matrix as a CSS style
             const transformMatrix = getTransform(srcPts, dstPts);
             canvasElement.style.transform = transformMatrix;
         }
         
-        // Recalculate the transform on window resize to keep it responsive
         window.addEventListener('resize', applyPerspectiveTransform);
-
+        
         // Add event listeners to all sliders to update the transform on change
         document.querySelectorAll('#perspective-controls input[type="range"]').forEach(slider => {
             slider.addEventListener('input', applyPerspectiveTransform);
         });
 
-        /**
-         * Calculates the 3D transformation matrix needed to map 4 source points to 4 destination points.
-         * @param {Array<{x: number, y: number}>} srcPts - The source corner points.
-         * @param {Array<{x: number, y: number}>} dstPts - The destination corner points.
-         * @returns {string} A CSS matrix3d() transform string.
-         */
         function getTransform(srcPts, dstPts) {
             const A = new Array(8).fill(0).map(() => new Array(8).fill(0));
             const b = new Array(8);
-
             for (let i = 0; i < 4; i++) {
                 const sp = srcPts[i];
                 const dp = dstPts[i];
@@ -385,58 +386,40 @@
                 A[i*2][7] = -sp.y * dp.x;
                 A[i*2+1][6] = -sp.x * dp.y;
                 A[i*2+1][7] = -sp.y * dp.y;
-
                 b[i*2] = dp.x;
                 b[i*2+1] = dp.y;
             }
-
             const h = gaussianElimination(A, b);
-
             const matrix = [
                 h[0], h[3], 0, h[6],
                 h[1], h[4], 0, h[7],
                 0   , 0   , 1, 0,
                 h[2], h[5], 0, 1
             ];
-            
             return `matrix3d(${matrix.join(',')})`;
         }
 
-        /**
-         * Solves a system of linear equations Ax=b using Gaussian elimination.
-         * @param {Array<Array<number>>} A - The matrix A.
-         * @param {Array<number>} b - The vector b.
-         * @returns {Array<number>} The solution vector x.
-         */
         function gaussianElimination(A, b) {
             const n = A.length;
             for (let i = 0; i < n; i++) {
                 let maxRow = i;
                 for (let k = i + 1; k < n; k++) {
-                    if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) {
-                        maxRow = k;
-                    }
+                    if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) maxRow = k;
                 }
                 [A[i], A[maxRow]] = [A[maxRow], A[i]];
                 [b[i], b[maxRow]] = [b[maxRow], b[i]];
-
                 for (let k = i + 1; k < n; k++) {
                     const factor = A[k][i] / A[i][i];
                     if (isFinite(factor)) {
-                         for (let j = i; j < n; j++) {
-                            A[k][j] -= factor * A[i][j];
-                        }
+                         for (let j = i; j < n; j++) A[k][j] -= factor * A[i][j];
                         b[k] -= factor * b[i];
                     }
                 }
             }
-
             const x = new Array(n);
             for (let i = n - 1; i >= 0; i--) {
                 let sum = 0;
-                for (let j = i + 1; j < n; j++) {
-                    sum += A[i][j] * x[j];
-                }
+                for (let j = i + 1; j < n; j++) sum += A[i][j] * x[j];
                 x[i] = (b[i] - sum) / A[i][i];
             }
             return x.map(val => isFinite(val) ? val : 0);

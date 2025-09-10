@@ -23,6 +23,7 @@
             width: 100vw;
             height: 100vh;
             z-index: 1;
+            perspective: 1000px; /* Add perspective for 3D transforms */
         }
         /* Make video and canvas fill the container, covering the area without distortion */
         .stack-container > * {
@@ -32,6 +33,10 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+        }
+        #output_canvas {
+            transform-origin: 0 0; /* Set transform origin for predictable transformations */
+            border: 2px solid red; /* Add a red border to show the canvas limits */
         }
         #webcam {
             display: none;
@@ -56,6 +61,26 @@
             margin-top: auto;
             text-align: center;
         }
+        /* Styles for the perspective controls */
+        #perspective-controls {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            background-color: rgba(0, 0, 0, 0.6);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            display: none; /* Hidden by default */
+            font-size: 0.8rem;
+            width: 250px;
+        }
+        #perspective-controls label {
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+        #perspective-controls input[type="range"] {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
     </style>
 </head>
 <body class="bg-black text-white">
@@ -68,6 +93,34 @@
 
     <!-- UI Elements that overlay the video feed -->
     <div class="ui-overlay">
+
+        <div id="perspective-controls">
+            <h4 class="font-bold mb-2">Perspective Controls</h4>
+            <div>
+                <label for="tlx">Top Left X</label>
+                <input type="range" id="tlx" min="0" max="100" value="15">
+                <label for="tly">Top Left Y</label>
+                <input type="range" id="tly" min="0" max="100" value="20">
+            </div>
+            <div class="mt-2">
+                <label for="trx">Top Right X</label>
+                <input type="range" id="trx" min="0" max="100" value="85">
+                <label for="try">Top Right Y</label>
+                <input type="range" id="try" min="0" max="100" value="20">
+            </div>
+             <div class="mt-2">
+                <label for="brx">Bottom Right X</label>
+                <input type="range" id="brx" min="0" max="100" value="95">
+                <label for="bry">Bottom Right Y</label>
+                <input type="range" id="bry" min="0" max="100" value="90">
+            </div>
+             <div class="mt-2">
+                <label for="blx">Bottom Left X</label>
+                <input type="range" id="blx" min="0" max="100" value="5">
+                <label for="bly">Bottom Left Y</label>
+                <input type="range" id="bly" min="0" max="100" value="90">
+            </div>
+        </div>
 
         <div class="controls-container">
             <div class="flex items-center justify-center gap-4">
@@ -104,6 +157,7 @@
         const loadingElement = document.getElementById("loading");
         const liveView = document.getElementById("liveView");
         const toggleBgButton = document.getElementById("toggleBgButton");
+        const perspectiveControls = document.getElementById("perspective-controls");
 
         let poseLandmarker = undefined;
         let runningMode = "VIDEO";
@@ -128,6 +182,7 @@
                 numPoses: 1 // Track a single person for this demo
             });
             drawingUtils = new DrawingUtils(canvasCtx);
+            
             // Hide loading and enable the button once the model is ready
             loadingElement.style.display = 'none';
             webcamButton.disabled = false;
@@ -155,12 +210,14 @@
                 canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
                 smoothedLandmarks = undefined; // Reset smoothing on disable
                 toggleBgButton.style.display = 'none'; // Hide the toggle button
+                perspectiveControls.style.display = 'none'; // Hide controls
                 video.style.display = 'none'; // Hide video element
                 isWebcamBackground = false; // Reset background state
             } else {
                 webcamRunning = true;
                 webcamButton.innerText = "Disable Webcam";
                 toggleBgButton.style.display = 'inline-block'; // Show the toggle button
+                perspectiveControls.style.display = 'block'; // Show controls
                 toggleBgButton.innerText = 'Show Webcam'; // Reset button text
 
                 // Activate the webcam stream
@@ -188,18 +245,29 @@
                 toggleBgButton.innerText = 'Show Webcam';
             }
         });
-
+        
         // --- 3. PREDICTION LOOP ---
         const startPredictionLoop = () => {
             // Set canvas size to match video feed ONCE
             canvasElement.width = video.videoWidth;
             canvasElement.height = video.videoHeight;
+            
+            // Calculate and apply the perspective transform
+            applyPerspectiveTransform();
+
             // Start the continuous prediction loop
             predictWebcam();
         }
 
         const predictWebcam = async () => {
-            // No longer need to set canvas size here, preventing the flicker.
+            // This check prevents the model from processing a frame before the video is ready,
+            // which is the cause of the "ROI width and height must be > 0" error.
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+                if (webcamRunning) {
+                    window.requestAnimationFrame(predictWebcam);
+                }
+                return; // Skip this frame if dimensions are not available yet.
+            }
 
             // Smoothing factor - lower value means more smoothing but more latency
             const smoothingFactor = 0.25;
@@ -245,13 +313,14 @@
                         drawingUtils.drawConnectors(smoothedLandmarks, PoseLandmarker.POSE_CONNECTIONS, {
                             color: (data) => {
                                 // Gradient color for connections
-                                const t = (data.from.z + data.to.z) / 2 + 0.5;
-                                const r = Math.floor(255 * (1 - t) + 171 * t); // from FF to AB (pink to purple)
-                                const g = Math.floor(0 * (1 - t) + 71 * t);
-                                const b = Math.floor(255 * (1 - t) + 188 * t);
-                                return `rgb(${r},${g},${b})`;
+                                // const t = (data.from.z + data.to.z) / 2 + 0.5;
+                                // const r = Math.floor(255 * (1 - t) + 171 * t); // from FF to AB (pink to purple)
+                                // const g = Math.floor(0 * (1 - t) + 71 * t);
+                                // const b = Math.floor(255 * (1 - t) + 188 * t);
+                                // return `rgb(${r},${g},${b})`;
+                                return `rgb(120,0,0)`;
                             },
-                             lineWidth: 3
+                             lineWidth: 8
                         });
                     }
                     canvasCtx.restore();
@@ -263,14 +332,116 @@
                 window.requestAnimationFrame(predictWebcam);
             }
         };
+
+        // --- 4. PERSPECTIVE TRANSFORM LOGIC ---
+
+        const applyPerspectiveTransform = () => {
+             if (!webcamRunning) return;
+            // Define the destination points for the perspective transform based on the container size
+            const w = liveView.clientWidth;
+            const h = liveView.clientHeight;
+            
+            // Source points are the corners of the element's bounding box
+            const srcPts = [ { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h } ];
+
+            // Destination points are now read dynamically from the sliders
+            const dstPts = [
+                { x: w * (parseInt(document.getElementById('tlx').value) / 100), y: h * (parseInt(document.getElementById('tly').value) / 100) },
+                { x: w * (parseInt(document.getElementById('trx').value) / 100), y: h * (parseInt(document.getElementById('try').value) / 100) },
+                { x: w * (parseInt(document.getElementById('brx').value) / 100), y: h * (parseInt(document.getElementById('bry').value) / 100) },
+                { x: w * (parseInt(document.getElementById('blx').value) / 100), y: h * (parseInt(document.getElementById('bly').value) / 100) }
+            ];
+
+            // Calculate and apply the transform matrix as a CSS style
+            const transformMatrix = getTransform(srcPts, dstPts);
+            canvasElement.style.transform = transformMatrix;
+        }
+        
+        // Recalculate the transform on window resize to keep it responsive
+        window.addEventListener('resize', applyPerspectiveTransform);
+
+        // Add event listeners to all sliders to update the transform on change
+        document.querySelectorAll('#perspective-controls input[type="range"]').forEach(slider => {
+            slider.addEventListener('input', applyPerspectiveTransform);
+        });
+
+        /**
+         * Calculates the 3D transformation matrix needed to map 4 source points to 4 destination points.
+         * @param {Array<{x: number, y: number}>} srcPts - The source corner points.
+         * @param {Array<{x: number, y: number}>} dstPts - The destination corner points.
+         * @returns {string} A CSS matrix3d() transform string.
+         */
+        function getTransform(srcPts, dstPts) {
+            const A = new Array(8).fill(0).map(() => new Array(8).fill(0));
+            const b = new Array(8);
+
+            for (let i = 0; i < 4; i++) {
+                const sp = srcPts[i];
+                const dp = dstPts[i];
+                A[i*2][0] = A[i*2+1][3] = sp.x;
+                A[i*2][1] = A[i*2+1][4] = sp.y;
+                A[i*2][2] = A[i*2+1][5] = 1;
+                A[i*2][6] = -sp.x * dp.x;
+                A[i*2][7] = -sp.y * dp.x;
+                A[i*2+1][6] = -sp.x * dp.y;
+                A[i*2+1][7] = -sp.y * dp.y;
+
+                b[i*2] = dp.x;
+                b[i*2+1] = dp.y;
+            }
+
+            const h = gaussianElimination(A, b);
+
+            const matrix = [
+                h[0], h[3], 0, h[6],
+                h[1], h[4], 0, h[7],
+                0   , 0   , 1, 0,
+                h[2], h[5], 0, 1
+            ];
+            
+            return `matrix3d(${matrix.join(',')})`;
+        }
+
+        /**
+         * Solves a system of linear equations Ax=b using Gaussian elimination.
+         * @param {Array<Array<number>>} A - The matrix A.
+         * @param {Array<number>} b - The vector b.
+         * @returns {Array<number>} The solution vector x.
+         */
+        function gaussianElimination(A, b) {
+            const n = A.length;
+            for (let i = 0; i < n; i++) {
+                let maxRow = i;
+                for (let k = i + 1; k < n; k++) {
+                    if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) {
+                        maxRow = k;
+                    }
+                }
+                [A[i], A[maxRow]] = [A[maxRow], A[i]];
+                [b[i], b[maxRow]] = [b[maxRow], b[i]];
+
+                for (let k = i + 1; k < n; k++) {
+                    const factor = A[k][i] / A[i][i];
+                    if (isFinite(factor)) {
+                         for (let j = i; j < n; j++) {
+                            A[k][j] -= factor * A[i][j];
+                        }
+                        b[k] -= factor * b[i];
+                    }
+                }
+            }
+
+            const x = new Array(n);
+            for (let i = n - 1; i >= 0; i--) {
+                let sum = 0;
+                for (let j = i + 1; j < n; j++) {
+                    sum += A[i][j] * x[j];
+                }
+                x[i] = (b[i] - sum) / A[i][i];
+            }
+            return x.map(val => isFinite(val) ? val : 0);
+        }
     </script>
 </body>
 </html>
-
-
-
-
-
-
-
 
